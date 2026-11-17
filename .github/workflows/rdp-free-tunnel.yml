@@ -1,0 +1,78 @@
+name: Free Windows PC - No Account Tunnel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Enable RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name TermService -StartupType Automatic
+          Start-Service TermService
+
+      - name: Set RDP Password
+        shell: powershell
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) {
+            Write-Error "RDP_PASSWORD secret missing hai - pehle repo secrets me add karo"
+            exit 1
+          }
+          $secure = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $secure
+          Write-Host "RDP user runneradmin password set ho gaya"
+
+      - name: Start Free Tunnels (serveo + bore, no account, no card)
+        shell: powershell
+        run: |
+          # --- serveo via built-in ssh (no signup) ---
+          try {
+            Start-Process -FilePath "ssh.exe" -ArgumentList "-o","StrictHostKeyChecking=no","-o","ServerAliveInterval=60","-R","0:localhost:3389","serveo.net" -RedirectStandardOutput "serveo.log" -RedirectStandardError "serveo-err.log" -NoNewWindow
+            Write-Host "serveo tunnel start kar diya"
+          } catch { Write-Host "serveo start fail: $_" }
+
+          # --- bore via bore.pub (free public relay, no signup) ---
+          try {
+            $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/ekzhang/bore/releases/latest" -Headers @{ "User-Agent" = "github-actions" }
+            $asset = $rel.assets | Where-Object { $_.name -like "*windows*" -and $_.name -like "*.zip" } | Select-Object -First 1
+            if ($asset) {
+              Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "bore.zip"
+              Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
+              Start-Process -FilePath ".\bore.exe" -ArgumentList "local","3389","--to","bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore-err.log" -NoNewWindow
+              Write-Host "bore tunnel start kar diya: $($asset.name)"
+            } else { Write-Host "bore windows asset nahi mila" }
+          } catch { Write-Host "bore start fail: $_" }
+
+          Start-Sleep -Seconds 35
+          Write-Host "=========================================="
+          Write-Host "AAP KA WINDOWS PC READY HAI"
+          Write-Host "Username: runneradmin"
+          Write-Host "--- SERVEO LOG ---"
+          if (Test-Path "serveo.log") { Get-Content "serveo.log" }
+          if (Test-Path "serveo-err.log") { Get-Content "serveo-err.log" }
+          Write-Host "--- BORE LOG ---"
+          if (Test-Path "bore.log") { Get-Content "bore.log" }
+          if (Test-Path "bore-err.log") { Get-Content "bore-err.log" }
+          Write-Host "Upar wale log me jo address aye (serveo.net:PORT ya bore.pub:PORT),"
+          Write-Host "usi ko Remote Desktop app me daalo"
+          Write-Host "=========================================="
+
+      - name: Keep PC Alive (6 hours max)
+        shell: powershell
+        run: |
+          while ($true) {
+            Start-Sleep -Seconds 300
+            Write-Host "--- tunnel logs update ---"
+            if (Test-Path "serveo.log") { Get-Content "serveo.log" -Tail 5 }
+            if (Test-Path "bore.log") { Get-Content "bore.log" -Tail 5 }
+            if (Test-Path "bore-err.log") { Get-Content "bore-err.log" -Tail 5 }
+          }
