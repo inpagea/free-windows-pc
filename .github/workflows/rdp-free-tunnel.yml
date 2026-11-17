@@ -31,12 +31,12 @@ jobs:
           Set-LocalUser -Name "runneradmin" -Password $secure
           Write-Host "RDP user runneradmin password set ho gaya"
 
-      - name: Start Free Tunnels (serveo + bore, no account, no card)
+      - name: Start Tunnels and Keep PC Alive (single step, taake tunnel band na ho)
         shell: powershell
         run: |
           # --- serveo via built-in ssh (no signup) ---
           try {
-            Start-Process -FilePath "ssh.exe" -ArgumentList "-o","StrictHostKeyChecking=no","-o","ServerAliveInterval=60","-R","0:localhost:3389","serveo.net" -RedirectStandardOutput "serveo.log" -RedirectStandardError "serveo-err.log" -NoNewWindow
+            Start-Process -FilePath "ssh.exe" -ArgumentList "-o","StrictHostKeyChecking=no","-o","ServerAliveInterval=30","-R","0:localhost:3389","serveo.net" -RedirectStandardOutput "serveo.log" -RedirectStandardError "serveo-err.log" -NoNewWindow
             Write-Host "serveo tunnel start kar diya"
           } catch { Write-Host "serveo start fail: $_" }
 
@@ -52,7 +52,7 @@ jobs:
             } else { Write-Host "bore windows asset nahi mila" }
           } catch { Write-Host "bore start fail: $_" }
 
-          Start-Sleep -Seconds 35
+          Start-Sleep -Seconds 40
           Write-Host "=========================================="
           Write-Host "AAP KA WINDOWS PC READY HAI"
           Write-Host "Username: runneradmin"
@@ -62,17 +62,13 @@ jobs:
           Write-Host "--- BORE LOG ---"
           if (Test-Path "bore.log") { Get-Content "bore.log" }
           if (Test-Path "bore-err.log") { Get-Content "bore-err.log" }
-          Write-Host "Upar wale log me jo address aye (serveo.net:PORT ya bore.pub:PORT),"
-          Write-Host "usi ko Remote Desktop app me daalo"
           Write-Host "=========================================="
 
-      - name: Keep PC Alive (6 hours max)
-        shell: powershell
-        run: |
           while ($true) {
             Start-Sleep -Seconds 300
-            Write-Host "--- tunnel logs update ---"
-            if (Test-Path "serveo.log") { Get-Content "serveo.log" -Tail 5 }
-            if (Test-Path "bore.log") { Get-Content "bore.log" -Tail 5 }
-            if (Test-Path "bore-err.log") { Get-Content "bore-err.log" -Tail 5 }
+            Write-Host "--- tunnel logs update $(Get-Date -Format 'HH:mm:ss') ---"
+            if (Test-Path "serveo.log") { Get-Content "serveo.log" -Tail 3 }
+            if (Test-Path "serveo-err.log") { Get-Content "serveo-err.log" -Tail 3 }
+            if (Test-Path "bore.log") { Get-Content "bore.log" -Tail 3 }
+            if (Test-Path "bore-err.log") { Get-Content "bore-err.log" -Tail 3 }
           }
