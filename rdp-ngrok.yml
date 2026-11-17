@@ -1,0 +1,60 @@
+name: Free Windows PC - ngrok (Alternative)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Enable RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name TermService -StartupType Automatic
+          Start-Service TermService
+
+      - name: Set RDP Password
+        shell: powershell
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          $pwd = $env:RDP_PASSWORD
+          if ([string]::IsNullOrWhiteSpace($pwd)) { $pwd = "FreeCloudPC@2026!" }
+          $secure = ConvertTo-SecureString $pwd -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $secure
+
+      - name: Setup ngrok (Free)
+        shell: powershell
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTH_TOKEN)) {
+            Write-Error "NGROK_AUTH_TOKEN secret missing hai. README dekho."
+            exit 1
+          }
+          choco install ngrok -y
+          ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
+          Start-Process -FilePath "ngrok" -ArgumentList "tcp 3389" -NoNewWindow
+          Start-Sleep -Seconds 10
+          try {
+            $tunnels = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
+            $addr = $tunnels.tunnels[0].public_url -replace "tcp://",""
+            Write-Host "=========================================="
+            Write-Host "AAP KA WINDOWS PC READY HAI"
+            Write-Host "Address: $addr"
+            Write-Host "Username: runneradmin"
+            Write-Host "Isi address ko Remote Desktop app me daalo"
+            Write-Host "=========================================="
+          } catch {
+            Write-Host "ngrok tunnel check karo - localhost:4040 open nahi ho raha"
+          }
+
+      - name: Keep PC Alive (6 hours max)
+        shell: powershell
+        run: |
+          while ($true) { Start-Sleep -Seconds 60 }

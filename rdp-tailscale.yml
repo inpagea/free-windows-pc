@@ -1,0 +1,60 @@
+name: Free Windows PC - Tailscale (Recommended)
+
+# Sirf manually chalega - Actions tab se "Run workflow"
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360  # GitHub ki max limit = 6 ghante
+
+    steps:
+      - name: Enable RDP
+        shell: powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service -Name TermService -StartupType Automatic
+          Start-Service TermService
+
+      - name: Set RDP Password
+        shell: powershell
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          $pwd = $env:RDP_PASSWORD
+          if ([string]::IsNullOrWhiteSpace($pwd)) { $pwd = "FreeCloudPC@2026!" }
+          $secure = ConvertTo-SecureString $pwd -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $secure
+          Write-Host "Username: runneradmin"
+          Write-Host "Password: jo aap ne RDP_PASSWORD secret me rakha hai (default: FreeCloudPC@2026!)"
+
+      - name: Install and Connect Tailscale (Free)
+        shell: powershell
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAILSCALE_AUTH_KEY)) {
+            Write-Error "TAILSCALE_AUTH_KEY secret missing hai. README dekho."
+            exit 1
+          }
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe"
+          Invoke-WebRequest -Uri $url -OutFile "tailscale-setup.exe"
+          Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=github-windows-pc --accept-routes --unattended
+          Start-Sleep -Seconds 8
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          Write-Host "=========================================="
+          Write-Host "AAP KA WINDOWS PC READY HAI"
+          Write-Host "Tailscale IP: $ip"
+          Write-Host "Username: runneradmin"
+          Write-Host "Isi IP ko Remote Desktop app me daalo"
+          Write-Host "=========================================="
+
+      - name: Keep PC Alive (6 hours max)
+        shell: powershell
+        run: |
+          Write-Host "PC chal raha hai. Cancel karne ke liye Actions me ja kar workflow cancel karo."
+          while ($true) { Start-Sleep -Seconds 60 }
